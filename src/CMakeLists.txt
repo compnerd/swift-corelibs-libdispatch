@@ -73,6 +73,11 @@ if(CMAKE_SWIFT_COMPILER)
   if(CMAKE_BUILD_TYPE MATCHES Release)
     set(swift_optimization_flags -O)
   endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set(DISPATCH_MODULE_MAP ${CMAKE_SOURCE_DIR}/dispatch/darwin/module.modulemap)
+  else()
+    set(DISPATCH_MODULE_MAP ${CMAKE_SOURCE_DIR}/dispatch/generic/module.modulemap)
+  endif()
   add_swift_library(swiftDispatch
                     MODULE_NAME
                       Dispatch
@@ -94,7 +99,7 @@ if(CMAKE_SWIFT_COMPILER)
                       swift/Wrapper.swift
                     CFLAGS
                       -fblocks
-                      -fmodule-map-file=${CMAKE_SOURCE_DIR}/dispatch/module.modulemap
+                      -fmodule-map-file=${DISPATCH_MODULE_MAP}
                     SWIFT_FLAGS
                       -I ${CMAKE_SOURCE_DIR}
                       ${swift_optimization_flags})
