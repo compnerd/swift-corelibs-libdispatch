@@ -74,14 +74,12 @@ if(ENABLE_SWIFT)
 
   set(INSTALL_TARGET_DIR "${INSTALL_LIBDIR}/swift/${SWIFT_OS}" CACHE PATH "Path where the libraries will be installed")
   set(INSTALL_DISPATCH_HEADERS_DIR "${INSTALL_LIBDIR}/swift/dispatch" CACHE PATH "Path where the headers will be installed for libdispatch")
-  set(INSTALL_BLOCK_HEADERS_DIR "${INSTALL_LIBDIR}/swift/Block" CACHE PATH "Path where the headers will be installed for the blocks runtime")
   set(INSTALL_OS_HEADERS_DIR "${INSTALL_LIBDIR}/swift/os" CACHE PATH "Path where the os/ headers will be installed")
 endif()
 
 if(NOT ENABLE_SWIFT)
   set(INSTALL_TARGET_DIR "${INSTALL_LIBDIR}" CACHE PATH "Path where the libraries will be installed")
   set(INSTALL_DISPATCH_HEADERS_DIR "include/dispatch" CACHE PATH "Path where the headers will be installed")
-  set(INSTALL_BLOCK_HEADERS_DIR "include" CACHE PATH "Path where the headers will be installed for the blocks runtime")
   set(INSTALL_OS_HEADERS_DIR "include/os" CACHE PATH "Path where the headers will be installed")
 endif()
 
@@ -132,34 +130,82 @@ endif()
 
 option(INSTALL_PRIVATE_HEADERS "installs private headers in the same location as the public ones" OFF)
 
-find_package(BlocksRuntime QUIET)
-if(NOT BlocksRuntime_FOUND)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL Darwin)
   set(BlocksRuntime_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/BlocksRuntime)
 
-  add_library(BlocksRuntime
-              STATIC
-                ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/data.c
-                ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/runtime.c)
-  set_target_properties(BlocksRuntime
+  include(ExternalProject)
+  ExternalProject_Add(SharedBlocksRuntime
+                      SOURCE_DIR
+                        ${PROJECT_SOURCE_DIR}/src/BlocksRuntime
+                      CMAKE_ARGS
+                        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+                        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+                        -DBUILD_SHARED_LIBS=YES
+                      BUILD_BYPRODUCTS
+                        <BINARY_DIR>/${CMAKE_SHARED_LIBRARY_PREFIX}BlocksRuntime${CMAKE_SHARED_LIBRARY_SUFFIX}
+                        <BINARY_DIR>/${CMAKE_IMPORT_LIBRARY_PREFIX}BlocksRuntime${CMAKE_IMPORT_LIBRARY_SUFFIX}
+                      BUILD_ALWAYS
+                        1)
+  ExternalProject_Add(StaticBlocksRuntime
+                      SOURCE_DIR
+                        ${PROJECT_SOURCE_DIR}/src/BlocksRuntime
+                      CMAKE_ARGS
+                        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+                        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+                        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+                        -DBUILD_SHARED_LIBS=NO
+                      BUILD_BYPRODUCTS
+                        <BINARY_DIR>/${CMAKE_SHARED_LIBRARY_PREFIX}BlocksRuntime${CMAKE_SHARED_LIBRARY_SUFFIX}
+                        <BINARY_DIR>/${CMAKE_IMPORT_LIBRARY_PREFIX}BlocksRuntime${CMAKE_IMPORT_LIBRARY_SUFFIX}
+                      BUILD_ALWAYS
+                        1)
+
+  ExternalProject_Get_Property(SharedBlocksRuntime binary_dir)
+  add_library(BlocksRuntime::BlocksRuntime SHARED IMPORTED)
+  set_target_properties(BlocksRuntime::BlocksRuntime
                         PROPERTIES
-                          POSITION_INDEPENDENT_CODE TRUE)
-  if(HAVE_OBJC AND CMAKE_DL_LIBS)
-    set_target_properties(BlocksRuntime
-                          PROPERTIES
-                            INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS})
-  endif()
+                          INTERFACE_INCLUDE_DIRECTORIES
+                            ${PROJECT_SOURCE_DIR}/src/BlocksRuntime
+                          IMPORTED_LOCATION
+                            ${binary_dir}/${CMAKE_SHARED_LIBRARY_PREFIX}BlocksRuntime${CMAKE_SHARED_LIBRARY_SUFFIX}
+                          IMPORTED_IMPLIB
+                            ${binary_dir}/${CMAKE_IMPORT_LIBRARY_PREFIX}BlocksRuntime${CMAKE_IMPORT_LIBRARY_SUFFIX})
 
-  add_library(BlocksRuntime::BlocksRuntime ALIAS BlocksRuntime)
-
-  install(FILES
-            ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block.h
-          DESTINATION
-            "${INSTALL_BLOCK_HEADERS_DIR}")
-  if(INSTALL_PRIVATE_HEADERS)
+  if(ENABLE_SWIFT)
     install(FILES
-              ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block_private.h
+              ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block.h
             DESTINATION
-              "${INSTALL_BLOCK_HEADERS_DIR}")
+              ${SWIFT_LIBDIR}/swift/Block)
+    if(INSTALL_PRIVATE_HEADERS)
+      install(FILES
+                ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block_private.h
+              DESTINATION
+                ${SWIFT_LIBDIR}/swift/Block)
+    endif()
+    install(TARGETS
+              BlocksRuntime::BlocksRuntime
+            DESTINATION
+              ${SWIFT_LIBDIR}/swift/${SWIFT_OS}/${SWIFT_HOST_ARCH})
+  else()
+    install(FILES
+              ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block.h
+            DESTINATION
+              ${CMAKE_INSTALL_INCLUDEDIR})
+    if(INSTALL_PRIVATE_HEADERS)
+      install(FILES
+                ${PROJECT_SOURCE_DIR}/src/BlocksRuntime/Block_private.h
+              DESTINATION
+                ${CMAKE_INSTALL_INCLUDEDIR})
+    endif()
+    install(TARGETS
+              BlocksRuntime::BlocksRuntime
+            DESTINATION
+              ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
 
