@@ -25,6 +25,16 @@ option(INSTALL_PRIVATE_HEADERS "install private headers in the same location as 
 add_library(BlocksRuntime
             ${PROJECT_SOURCE_DIR}/data.c
             ${PROJECT_SOURCE_DIR}/runtime.c)
+if(CMAKE_SYSTEM_NAME MATCHES Windows)
+  target_sources(BlocksRuntime
+                 PRIVATE
+                   ${PROJECT_SOURCE_DIR}/BlocksRuntime.def)
+  if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(BlockRuntime
+                               PUBLIC
+                                 BlocksRuntime_STATIC)
+  endif()
+endif()
 set_target_properties(BlocksRuntime
                       PROPERTIES
                         POSITION_INDEPENDENT_CODE TRUE)
