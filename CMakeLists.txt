@@ -83,6 +83,8 @@ option(ENABLE_TESTING "build libdispatch tests" ON)
 
 option(USE_LLD_LINKER "use the lld linker" FALSE)
 
+option(DISPATCH_ENABLE_ASSERTS "enable debug assertions" FALSE)
+
 if(NOT USE_LLD_LINKER AND
    (CMAKE_SYSTEM_NAME STREQUAL Linux OR
     CMAKE_SYSTEM_NAME STREQUAL FreeBSD OR
