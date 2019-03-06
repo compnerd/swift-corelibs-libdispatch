@@ -93,14 +93,10 @@ _dispatch_worker_thread_thunk(LPVOID lpParameter);
 #endif
 #endif
 
-#if DISPATCH_COCOA_COMPAT || defined(_WIN32)
-static dispatch_once_t _dispatch_main_q_handle_pred;
-#endif
 #if DISPATCH_COCOA_COMPAT
+static dispatch_once_t _dispatch_main_q_handle_pred;
 static void _dispatch_runloop_queue_poke(dispatch_queue_t dq,
 		dispatch_qos_t qos, dispatch_wakeup_flags_t flags);
-#endif
-#if DISPATCH_COCOA_COMPAT || defined(_WIN32)
 static void _dispatch_runloop_queue_handle_init(void *ctxt);
 static void _dispatch_runloop_queue_handle_dispose(dispatch_queue_t dq);
 #endif
@@ -4480,7 +4476,7 @@ _dispatch_queue_wakeup(dispatch_queue_t dq, dispatch_qos_t qos,
 	return _dispatch_queue_class_wakeup(dq, qos, flags, target);
 }
 
-#if DISPATCH_COCOA_COMPAT || defined(_WIN32)
+#if DISPATCH_COCOA_COMPAT
 DISPATCH_ALWAYS_INLINE
 static inline bool
 _dispatch_runloop_handle_is_valid(dispatch_runloop_handle_t handle)
@@ -5122,7 +5118,7 @@ _dispatch_queue_serial_drain(dispatch_queue_t dq, dispatch_invoke_context_t dic,
 	return _dispatch_queue_drain(dq, dic, flags, owned, true);
 }
 
-#if DISPATCH_COCOA_COMPAT || defined(_WIN32)
+#if DISPATCH_COCOA_COMPAT
 DISPATCH_NOINLINE
 static void
 _dispatch_main_queue_update_priority_from_thread(void)
@@ -6188,7 +6184,7 @@ _dispatch_network_root_queue_create_4NW(const char *label,
 
 static bool _dispatch_program_is_probably_callback_driven;
 
-#if DISPATCH_COCOA_COMPAT || defined(_WIN32)
+#if DISPATCH_COCOA_COMPAT
 
 dispatch_queue_t
 _dispatch_runloop_root_queue_create_4CF(const char *label, unsigned long flags)
