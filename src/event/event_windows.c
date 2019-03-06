@@ -21,6 +21,18 @@
 #include "internal.h"
 #if DISPATCH_EVENT_BACKEND_WINDOWS
 
+// TODO(compnerd) these can be removed after the 1121 merge
+#define DISPATCH_PORT_TIMER_CLOCK_MONOTONIC DISPATCH_PORT_TIMER_CLOCK_MACH
+#define DISPATCH_CLOCK_MONOTONIC DISPATCH_CLOCK_MACH
+
+static HANDLE hPort = NULL;
+enum _dispatch_windows_port {
+	DISPATCH_PORT_POKE = 0,
+	DISPATCH_PORT_TIMER_CLOCK_WALL,
+//	DISPATCH_PORT_TIMER_CLOCK_UPTIME,
+	DISPATCH_PORT_TIMER_CLOCK_MONOTONIC,
+};
+
 #pragma mark dispatch_unote_t
 
 bool
@@ -48,34 +60,193 @@ _dispatch_unote_unregister(dispatch_unote_t du DISPATCH_UNUSED,
 
 #pragma mark timers
 
+typedef struct _dispatch_windows_timeout_s {
+	PTP_TIMER pTimer;
+	enum _dispatch_windows_port ullIdent;
+	BOOL bArmed;
+} *dispatch_windows_timeout_t;
+
+#define DISPATCH_WINDOWS_TIMEOUT_INITIALIZER(clock)                             \
+	[DISPATCH_CLOCK_##clock] = {                                            \
+		.pTimer = NULL,                                                 \
+		.ullIdent = DISPATCH_PORT_TIMER_CLOCK_##clock,                  \
+		.bArmed = FALSE,                                                \
+	}
+
+static struct _dispatch_windows_timeout_s _dispatch_windows_timeout[] = {
+	DISPATCH_WINDOWS_TIMEOUT_INITIALIZER(WALL),
+//	DISPATCH_WINDOWS_TIMEOUT_INITIALIZER(UPTIME),
+	DISPATCH_WINDOWS_TIMEOUT_INITIALIZER(MONOTONIC),
+};
+
+static void
+_dispatch_event_merge_timer(dispatch_clock_t clock)
+{
+	_dispatch_timers_expired = true;
+	_dispatch_timers_processing_mask |= 1 << DISPATCH_TIMER_INDEX(clock, 0);
+#if DISPATCH_USE_DTRACE
+	_dispatch_timers_will_wake |= 1 << 0;
+#endif
+	_dispatch_windows_timeout[clock].bArmed = FALSE;
+	_dispatch_timers_heap[clock].dth_flags &= ~DTH_ARMED;
+}
+
+static void CALLBACK
+_dispatch_timer_callback(PTP_CALLBACK_INSTANCE Instance, PVOID Context,
+	PTP_TIMER Timer)
+{
+	BOOL bSuccess;
+
+	bSuccess = PostQueuedCompletionStatus(hPort, 0, (ULONG_PTR)Context,
+		NULL);
+	if (bSuccess == FALSE) {
+		DISPATCH_INTERNAL_CRASH(GetLastError(),
+			"PostQueuedCompletionStatus");
+	}
+}
+
 void
-_dispatch_event_loop_timer_arm(uint32_t tidx DISPATCH_UNUSED,
-		dispatch_timer_delay_s range DISPATCH_UNUSED,
+_dispatch_event_loop_timer_arm(uint32_t tidx, dispatch_timer_delay_s range,
 		dispatch_clock_now_cache_t nows DISPATCH_UNUSED)
 {
-	WIN_PORT_ERROR();
+	dispatch_windows_timeout_t timer;
+	FILETIME ftDueTime;
+	LARGE_INTEGER liTime;
+
+	switch (DISPATCH_TIMER_CLOCK(tidx)) {
+	case DISPATCH_CLOCK_WALL:
+		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_WALL];
+
+		WIN_PORT_ERROR();
+		__assume(0);
+
+//	case DISPATCH_CLOCK_UPTIME:
+//		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_UPTIME];
+//		liTime.QuadPart = -((range.delay + 99) / 100);
+//		break;
+
+	case DISPATCH_CLOCK_MONOTONIC:
+		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_MONOTONIC];
+
+		liTime.QuadPart = -((range.delay + 99) / 100);
+		break;
+	}
+
+	if (timer->pTimer == NULL) {
+		timer->pTimer = CreateThreadpoolTimer(_dispatch_timer_callback,
+			(LPVOID)timer->ullIdent, NULL);
+		if (timer->pTimer == NULL) {
+			DISPATCH_INTERNAL_CRASH(GetLastError(),
+				"CreateThreadpoolTimer");
+		}
+	}
+
+	ftDueTime.dwHighDateTime = liTime.HighPart;
+	ftDueTime.dwLowDateTime = liTime.LowPart;
+
+	SetThreadpoolTimer(timer->pTimer, &ftDueTime, /*msPeriod=*/0,
+		/*msWindowLength=*/0);
+	timer->bArmed = TRUE;
+
+	_dispatch_timers_heap[tidx].dth_flags |= DTH_ARMED;
 }
 
 void
 _dispatch_event_loop_timer_delete(uint32_t tidx DISPATCH_UNUSED)
 {
-	WIN_PORT_ERROR();
+	dispatch_windows_timeout_t timer;
+
+	switch (DISPATCH_TIMER_CLOCK(tidx)) {
+	case DISPATCH_CLOCK_WALL:
+		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_WALL];
+		break;
+
+//	case DISPATCH_CLOCK_UPTIME:
+//		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_UPTIME];
+//		break;
+
+	case DISPATCH_CLOCK_MONOTONIC:
+		timer = &_dispatch_windows_timeout[DISPATCH_CLOCK_MONOTONIC];
+		break;
+	}
+
+	SetThreadpoolTimer(timer->pTimer, NULL, /*msPeriod=*/0,
+		/*msWindowLength=*/0);
+	timer->bArmed = FALSE;
+
+	_dispatch_timers_heap[tidx].dth_flags &= ~DTH_ARMED;
 }
 
 #pragma mark dispatch_loop
+
+static void
+_dispatch_windows_port_init(void *context DISPATCH_UNUSED)
+{
+	hPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+	if (hPort == NULL) {
+		DISPATCH_INTERNAL_CRASH(GetLastError(), "CreateIoCompletionPort");
+	}
+
+#if DISPATCH_USE_MGR_THREAD
+//	_dispatch_trace_item_push(_dispatch_mgr_q.do_targetq, &_dispatch_mgr_q);
+	dx_push(_dispatch_mgr_q.do_targetq, &_dispatch_mgr_q, 0);
+#endif
+}
 
 void
 _dispatch_event_loop_poke(dispatch_wlh_t wlh DISPATCH_UNUSED,
 		uint64_t dq_state DISPATCH_UNUSED, uint32_t flags DISPATCH_UNUSED)
 {
-	WIN_PORT_ERROR();
+	static dispatch_once_t _dispatch_windows_port_init_pred;
+	BOOL bSuccess;
+
+	dispatch_once_f(&_dispatch_windows_port_init_pred, NULL,
+		_dispatch_windows_port_init);
+	bSuccess = PostQueuedCompletionStatus(hPort, 0, DISPATCH_PORT_POKE,
+		NULL);
+	(void)dispatch_assume(bSuccess);
 }
 
 DISPATCH_NOINLINE
 void
-_dispatch_event_loop_drain(uint32_t flags DISPATCH_UNUSED)
+_dispatch_event_loop_drain(uint32_t flags)
 {
-	WIN_PORT_ERROR();
+	DWORD dwNumberOfBytesTransferred;
+	ULONG_PTR ulCompletionKey;
+	LPOVERLAPPED pOV;
+	BOOL bSuccess;
+
+	pOV = (LPOVERLAPPED)&pOV;
+	bSuccess = GetQueuedCompletionStatus(hPort, &dwNumberOfBytesTransferred,
+		&ulCompletionKey, &pOV,
+		(flags & KEVENT_FLAG_IMMEDIATE) ? 0 : INFINITE);
+
+	while (bSuccess) {
+		switch (ulCompletionKey) {
+		case DISPATCH_PORT_POKE:
+			break;
+
+		case DISPATCH_PORT_TIMER_CLOCK_WALL:
+			_dispatch_event_merge_timer(DISPATCH_CLOCK_WALL);
+			break;
+
+//		case DISPATCH_PORT_TIMER_CLOCK_UPTIME:
+//			_dispatch_event_merge_timer(DISPATCH_CLOCK_UPTIME);
+//			break;
+
+		case DISPATCH_PORT_TIMER_CLOCK_MONOTONIC:
+			_dispatch_event_merge_timer(DISPATCH_CLOCK_MONOTONIC);
+			break;
+		}
+
+		bSuccess = GetQueuedCompletionStatus(hPort,
+			&dwNumberOfBytesTransferred, &ulCompletionKey, &pOV, 0);
+	}
+
+	if (bSuccess == FALSE && pOV != NULL) {
+		DISPATCH_INTERNAL_CRASH(GetLastError(),
+			"GetQueuedCompletionStatus");
+	}
 }
 
 void
