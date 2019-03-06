@@ -1547,7 +1547,7 @@ _dispatch_queue_destroy(dispatch_queue_t dq, bool *allow_free)
 			DISPATCH_CLIENT_CRASH((uintptr_t)dq_state,
 					"Release of a locked queue");
 		}
-#ifndef __LP64__
+#if DISPATCH_SIZEOF_PTR == 4
 		dq_state >>= 32;
 #endif
 		DISPATCH_CLIENT_CRASH((uintptr_t)dq_state,
