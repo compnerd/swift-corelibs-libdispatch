@@ -205,9 +205,9 @@ typedef HANDLE _dispatch_sema4_t;
 #define _DSEMA4_POLICY_LIFO 0
 #define _DSEMA4_TIMEOUT() ((errno) = ETIMEDOUT, -1)
 
-#define _dispatch_sema4_init(sema, policy) (void)(*(sema) = 0)
-#define _dispatch_sema4_is_created(sema)   (*(sema) != 0)
-void _dispatch_sema4_create_slow(_dispatch_sema4_t *sema, int policy);
+void _dispatch_sema4_init(_dispatch_sema4_t *sema, int policy);
+#define _dispatch_sema4_is_created(sema)   ((void)sema, 1)
+#define _dispatch_sema4_create_slow(sema, policy) ((void)sema, (void)policy)
 
 #else
 #error "port has to implement _dispatch_sema4_t"
@@ -285,9 +285,6 @@ _dispatch_thread_event_init(dispatch_thread_event_t dte)
 	dte->dte_value = 0;
 #else
 	_dispatch_sema4_init(&dte->dte_sema, _DSEMA4_POLICY_FIFO);
-#if defined(_WIN32)
-	_dispatch_sema4_create(&dte->dte_sema, _DSEMA4_POLICY_FIFO);
-#endif
 #endif
 }
 
