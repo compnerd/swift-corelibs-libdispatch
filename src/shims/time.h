@@ -111,7 +111,7 @@ _dispatch_get_nanoseconds(void)
 	static const uint64_t kNTToUNIXBiasAdjustment = 11644473600 * NSEC_PER_SEC;
 	FILETIME ft;
 	ULARGE_INTEGER li;
-	GetSystemTimeAsFileTime(&ft);
+	GetSystemTimePreciseAsFileTime(&ft);
 	li.LowPart = ft.dwLowDateTime;
 	li.HighPart = ft.dwHighDateTime;
 	return li.QuadPart * 100ull - kNTToUNIXBiasAdjustment;
