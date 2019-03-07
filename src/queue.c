@@ -6368,13 +6368,11 @@ _dispatch_get_main_queue_handle_4CF(void)
 	return _dispatch_runloop_queue_get_handle(dq);
 }
 
-#if TARGET_OS_MAC
 dispatch_runloop_handle_t
 _dispatch_get_main_queue_port_4CF(void)
 {
 	return _dispatch_get_main_queue_handle_4CF();
 }
-#endif
 
 static bool main_q_is_draining;
 
